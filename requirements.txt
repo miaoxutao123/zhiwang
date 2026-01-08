@@ -1,0 +1,9 @@
+# 知网爬虫依赖
+
+# 核心依赖
+DrissionPage>=4.0.0
+
+# 可选依赖 - Linux虚拟显示器
+# pyvirtualdisplay>=3.0  # Linux上无头模式使用虚拟显示器
+# 注意：使用pyvirtualdisplay还需要安装系统依赖：
+# Ubuntu/Debian: sudo apt-get install xvfb
