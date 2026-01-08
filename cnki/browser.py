@@ -1,39 +1,29 @@
 """浏览器下载和配置工具.
 
-支持从国内镜像源下载Chromium到项目文件夹。
+支持使用Playwright下载Chromium到项目文件夹。
 """
 
 from __future__ import annotations
 
-import json
 import os
 import platform
-import shutil
-import ssl
-import tempfile
-import urllib.request
-import zipfile
+import subprocess
+import sys
 from pathlib import Path
-
-ssl._create_default_https_context = ssl._create_unverified_context
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # Chromium安装目录（项目文件夹内）
 CHROMIUM_DIR = PROJECT_ROOT / "browsers" / "chromium"
-
-# 国内镜像源
-MIRRORS = {
-    "npmmirror": "https://registry.npmmirror.com/-/binary/chromium-browser-snapshots",
-    "ghproxy": "https://mirror.ghproxy.com/https://github.com/nicedisk/nicedisk.github.io/releases/download/chromium",
-}
+PLAYWRIGHT_BROWSERS_DIR = PROJECT_ROOT / "browsers" / "playwright"
 
 
 def get_chrome_path_in_project() -> str | None:
-    """获取项目内的Chromium路径."""
+    """获取项目内的Chromium路径（包括Playwright下载的）."""
     system = platform.system()
     
+    # 检查旧位置
     if system == "Windows":
         chrome_exe = CHROMIUM_DIR / "chrome.exe"
     elif system == "Darwin":
@@ -44,13 +34,23 @@ def get_chrome_path_in_project() -> str | None:
     if chrome_exe.exists():
         return str(chrome_exe)
     
-    # 搜索目录
+    # 搜索旧目录
     if CHROMIUM_DIR.exists():
         for root, _dirs, files in os.walk(CHROMIUM_DIR):
             if system == "Windows" and "chrome.exe" in files:
                 return os.path.join(root, "chrome.exe")
             elif system != "Windows" and "chrome" in files:
                 return os.path.join(root, "chrome")
+    
+    # 搜索Playwright下载的浏览器
+    if PLAYWRIGHT_BROWSERS_DIR.exists():
+        for root, _dirs, files in os.walk(PLAYWRIGHT_BROWSERS_DIR):
+            if system == "Windows" and "chrome.exe" in files:
+                return os.path.join(root, "chrome.exe")
+            elif system != "Windows" and "chrome" in files:
+                chrome_path = os.path.join(root, "chrome")
+                if os.access(chrome_path, os.X_OK):
+                    return chrome_path
     
     return None
 
@@ -143,159 +143,55 @@ def find_chrome_path() -> str | None:
     return None
 
 
-def _download_file(url: str, dest: str, desc: str = "下载") -> bool:
-    """下载文件并显示进度."""
-    print(f"{desc}: {url[:60]}...")
+def download_chromium_via_playwright() -> str | None:
+    """使用Playwright下载Chromium到项目文件夹."""
+    print("=" * 50)
+    print("使用Playwright下载Chromium浏览器")
+    print("=" * 50)
+    print(f"安装目录: {PLAYWRIGHT_BROWSERS_DIR}")
     
-    def progress(count: int, block_size: int, total_size: int) -> None:
-        if total_size > 0:
-            percent = min(100, count * block_size * 100 // total_size)
-            mb = count * block_size / 1024 / 1024
-            total_mb = total_size / 1024 / 1024
-            print(f"\r进度: {percent}% ({mb:.1f}/{total_mb:.1f} MB)", end="", flush=True)
+    # 确保playwright已安装
+    try:
+        import playwright
+    except ImportError:
+        print("正在安装playwright...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "-q"])
     
+    # 设置环境变量，指定下载目录
+    env = os.environ.copy()
+    env["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_BROWSERS_DIR)
+    
+    # 下载chromium
+    print("正在下载Chromium...")
     try:
-        urllib.request.urlretrieve(url, dest, progress)
-        print()
-        return True
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"下载失败: {result.stderr}")
+            return None
+        print("下载完成")
     except Exception as e:
-        print(f"\n下载失败: {e}")
-        return False
-
-
-def _get_latest_version_npmmirror(platform_name: str) -> str | None:
-    """从npmmirror获取最新版本号."""
-    try:
-        url = f"{MIRRORS['npmmirror']}/{platform_name}/LAST_CHANGE"
-        with urllib.request.urlopen(url, timeout=30) as response:
-            return response.read().decode("utf-8").strip()
-    except Exception as e:
-        print(f"获取版本号失败: {e}")
+        print(f"下载失败: {e}")
         return None
+    
+    # 查找下载的浏览器路径
+    chrome_path = get_chrome_path_in_project()
+    if chrome_path:
+        save_chrome_path(chrome_path)
+        print(f"✓ Chromium安装成功: {chrome_path}")
+        return chrome_path
+    
+    print("未找到下载的浏览器")
+    return None
 
 
 def download_chromium() -> str | None:
-    """从国内镜像下载Chromium到项目文件夹.
-    
-    Returns:
-        Chromium可执行文件路径，失败返回None
-    """
-    system = platform.system()
-    machine = platform.machine().lower()
-    
-    print("=" * 50)
-    print("Chromium浏览器下载工具（国内镜像）")
-    print("=" * 50)
-    print(f"系统: {system} {machine}")
-    print(f"安装目录: {CHROMIUM_DIR}")
-    
-    # 确定平台名称
-    if system == "Windows":
-        if machine in ["amd64", "x86_64", "x64"]:
-            platform_name = "Win_x64"
-            zip_name = "chrome-win.zip"
-        else:
-            platform_name = "Win"
-            zip_name = "chrome-win.zip"
-    elif system == "Darwin":
-        if machine == "arm64":
-            platform_name = "Mac_Arm"
-        else:
-            platform_name = "Mac"
-        zip_name = "chrome-mac.zip"
-    else:  # Linux
-        platform_name = "Linux_x64"
-        zip_name = "chrome-linux.zip"
-    
-    # 创建临时目录
-    temp_dir = tempfile.mkdtemp(prefix="chromium_download_")
-    zip_path = os.path.join(temp_dir, "chromium.zip")
-    
-    try:
-        # 方法1: 从npmmirror下载
-        print("\n尝试从npmmirror镜像下载...")
-        version = _get_latest_version_npmmirror(platform_name)
-        
-        if version:
-            print(f"最新版本: {version}")
-            download_url = f"{MIRRORS['npmmirror']}/{platform_name}/{version}/{zip_name}"
-            
-            if _download_file(download_url, zip_path, "下载Chromium"):
-                chrome_path = _extract_and_install(zip_path, temp_dir)
-                if chrome_path:
-                    return chrome_path
-        
-        # 方法2: 从ghproxy镜像下载（备用）
-        print("\n尝试从ghproxy镜像下载...")
-        if system == "Windows" and machine in ["amd64", "x86_64", "x64"]:
-            download_url = f"{MIRRORS['ghproxy']}/chrome-win64.zip"
-            if _download_file(download_url, zip_path, "下载Chromium"):
-                chrome_path = _extract_and_install(zip_path, temp_dir)
-                if chrome_path:
-                    return chrome_path
-        
-        print("\n所有下载源都失败了")
-        print("请手动下载Chrome浏览器: https://www.google.com/chrome/")
-        return None
-        
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def _extract_and_install(zip_path: str, temp_dir: str) -> str | None:
-    """解压并安装Chromium."""
-    if not os.path.exists(zip_path) or os.path.getsize(zip_path) < 1000000:
-        print("下载的文件不完整")
-        return None
-    
-    print("正在解压...")
-    extract_dir = os.path.join(temp_dir, "extract")
-    os.makedirs(extract_dir, exist_ok=True)
-    
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(extract_dir)
-    except Exception as e:
-        print(f"解压失败: {e}")
-        return None
-    
-    # 查找chrome可执行文件
-    system = platform.system()
-    chrome_exe = None
-    chrome_dir = None
-    
-    for root, _dirs, files in os.walk(extract_dir):
-        if system == "Windows" and "chrome.exe" in files:
-            chrome_exe = os.path.join(root, "chrome.exe")
-            chrome_dir = root
-            break
-        elif system != "Windows" and "chrome" in files:
-            chrome_exe = os.path.join(root, "chrome")
-            chrome_dir = root
-            break
-    
-    if not chrome_exe:
-        print("未找到chrome可执行文件")
-        return None
-    
-    # 移动到项目目录
-    print(f"安装到: {CHROMIUM_DIR}")
-    
-    if CHROMIUM_DIR.exists():
-        shutil.rmtree(CHROMIUM_DIR, ignore_errors=True)
-    
-    CHROMIUM_DIR.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(chrome_dir, str(CHROMIUM_DIR))
-    
-    # 获取最终路径
-    final_path = get_chrome_path_in_project()
-    
-    if final_path:
-        save_chrome_path(final_path)
-        print(f"✓ Chromium安装成功: {final_path}")
-        return final_path
-    
-    return None
+    """下载Chromium到项目文件夹."""
+    return download_chromium_via_playwright()
 
 
 def setup_virtual_display() -> object | None:
