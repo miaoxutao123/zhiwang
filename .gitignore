@@ -13,6 +13,8 @@ browsers/
 
 # 输出文件
 output/
+test_output/
+downloads/
 
 # 配置文件
 .chrome_path
@@ -26,3 +28,6 @@ output/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 测试文件
+test_*.py

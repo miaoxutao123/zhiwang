@@ -2,8 +2,33 @@
 
 # 核心依赖
 DrissionPage>=4.0.0
+requests>=2.28.0
 
 # 可选依赖 - Linux虚拟显示器
 # pyvirtualdisplay>=3.0  # Linux上无头模式使用虚拟显示器
 # 注意：使用pyvirtualdisplay还需要安装系统依赖：
 # Ubuntu/Debian: sudo apt-get install xvfb
+
+# ======== PDF转Markdown转换依赖（按需安装） ========
+
+# DeepSeek-OCR云端API所需依赖（适合2c2g等低配置服务器）
+pdf2image>=1.16.0   # PDF渲染为图片（需要poppler）
+pdfplumber>=0.10.0  # 提取PDF中的图片（可选但推荐）
+# 新用户可获得硅基流动2000万tokens免费额度
+# 注意：pdf2image需要poppler，安装方式：
+#   Ubuntu/Debian: sudo apt-get install poppler-utils
+#   macOS: brew install poppler
+#   Windows: 下载poppler并添加到PATH
+
+# 其他可选后端：
+# docling>=2.0.0         # IBM学术论文PDF转换（需GPU或高配置）
+# marker-pdf>=1.0.0      # 专为学术论文优化，支持图片/公式/表格
+# pymupdf4llm>=0.0.10    # 轻量级备选方案
+# markitdown>=0.1.0      # Microsoft出品，简单易用
+
+# 完整安装（支持更多格式）:
+# pip install marker-pdf[full]
+
+# ======== DeepSeek-OCR环境变量配置 ========
+# DS_OCR_API_KEY: 硅基流动API密钥（必需）
+# DS_OCR_BASE_URL: API端点（默认: https://api.siliconflow.cn/v1）
